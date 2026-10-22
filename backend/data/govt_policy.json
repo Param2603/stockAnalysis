@@ -1,0 +1,37 @@
+[
+  {
+    "date": "2026-09-28",
+    "title": "SEBI releases comprehensive consultation paper on strengthening F&O risk management",
+    "category": "SEBI Regulation",
+    "sectors": ["Financial Services", "Capital Markets", "Broking"],
+    "source": "https://www.sebi.gov.in"
+  },
+  {
+    "date": "2026-08-10",
+    "title": "RBI Monetary Policy Committee keeps Repo Rate steady with disinflation focus",
+    "category": "Monetary Policy",
+    "sectors": ["Banking", "Real Estate", "Automotive", "NBFC"],
+    "source": "https://www.rbi.org.in"
+  },
+  {
+    "date": "2026-07-23",
+    "title": "Union Budget: Capex outlay elevated with focus on digital infrastructure and clean energy transition",
+    "category": "Union Budget",
+    "sectors": ["Infrastructure", "Railways", "Power & Renewable", "Defence"],
+    "source": "https://www.indiabudget.gov.in"
+  },
+  {
+    "date": "2026-06-15",
+    "title": "Government expands Production-Linked Incentive (PLI) scope for semiconductor and electronics manufacturing",
+    "category": "Industrial Policy",
+    "sectors": ["Semiconductors", "IT Hardware", "Electronics"],
+    "source": "https://pib.gov.in"
+  },
+  {
+    "date": "2026-05-18",
+    "title": "SEBI mandates enhanced corporate governance & insider trading disclosures for high-value debt-listed entities",
+    "category": "Capital Markets",
+    "sectors": ["Corporate Debt", "Banking", "Infrastructure"],
+    "source": "https://www.sebi.gov.in"
+  }
+]

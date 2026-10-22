@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "dev": "npm --prefix stock-app run dev"
+  },
+  "dependencies": {
+    "recharts": "^3.10.1"
+  }
+}
