@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import {
   TrendingUp, TrendingDown, Activity, Globe, DollarSign, Wallet,
   Newspaper, BookOpen, ShieldCheck, RefreshCw, Moon, Sun, Search,
@@ -241,6 +241,225 @@ function LiveTickerTape({ onSelect }) {
   );
 }
 
+// Universal Global Search Bar for All Crypto and Stocks
+function UniversalSearchBar({ onSelectTicker }) {
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("all");
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const inputRef = useRef(null);
+  const containerRef = useRef(null);
+
+  // Global hotkeys (Ctrl+K, Cmd+K, /)
+  useEffect(() => {
+    const handleGlobalKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        inputRef.current?.focus();
+        setIsOpen(true);
+      } else if (e.key === "/" && document.activeElement?.tagName !== "INPUT" && document.activeElement?.tagName !== "TEXTAREA") {
+        e.preventDefault();
+        inputRef.current?.focus();
+        setIsOpen(true);
+      } else if (e.key === "Escape") {
+        setIsOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleGlobalKey);
+    return () => window.removeEventListener("keydown", handleGlobalKey);
+  }, []);
+
+  // Click outside listener
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Debounced search query
+  useEffect(() => {
+    let active = true;
+    const trimmed = query.trim();
+    if (!isOpen && !trimmed) return;
+
+    setLoading(true);
+    const timer = setTimeout(() => {
+      fetchFromApi(`/search?q=${encodeURIComponent(trimmed)}&category=${category}`)
+        .then((res) => {
+          if (active) {
+            setResults(Array.isArray(res) ? res : []);
+            setSelectedIndex(0);
+            setLoading(false);
+          }
+        })
+        .catch(() => {
+          if (active) setLoading(false);
+        });
+    }, trimmed ? 200 : 0);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [query, category, isOpen]);
+
+  const handleSelect = (item) => {
+    if (!item) return;
+    const sym = item.symbol || item.ticker || query.trim().toUpperCase();
+    if (sym) {
+      onSelectTicker(sym);
+      setIsOpen(false);
+      setQuery("");
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (!isOpen) {
+      if (e.key === "ArrowDown" || e.key === "Enter") setIsOpen(true);
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setSelectedIndex((prev) => (prev + 1 < results.length ? prev + 1 : 0));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setSelectedIndex((prev) => (prev - 1 >= 0 ? prev - 1 : results.length - 1));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (results[selectedIndex]) {
+        handleSelect(results[selectedIndex]);
+      } else if (query.trim()) {
+        handleSelect({ symbol: query.trim().toUpperCase() });
+      }
+    } else if (e.key === "Escape") {
+      setIsOpen(false);
+    }
+  };
+
+  const getBadgeClass = (item) => {
+    if (item.type === "crypto") return "asset-badge crypto";
+    if (item.exchange === "NSE" || item.exchange === "BSE" || item.symbol?.endsWith(".NS")) return "asset-badge stock-in";
+    if (item.type === "index") return "asset-badge index";
+    return "asset-badge stock-us";
+  };
+
+  const getBadgeLabel = (item) => {
+    if (item.type === "crypto") return "Crypto";
+    if (item.exchange) return item.exchange;
+    if (item.symbol?.endsWith(".NS")) return "NSE";
+    if (item.symbol?.endsWith(".BO")) return "BSE";
+    return "Stock";
+  };
+
+  return (
+    <div className="universal-search-container" ref={containerRef}>
+      <div className="search-bar-input-box" onClick={() => { setIsOpen(true); inputRef.current?.focus(); }}>
+        <Search size={16} color="var(--accent-blue)" />
+        <input
+          ref={inputRef}
+          type="text"
+          className="search-bar-field"
+          placeholder="Search all crypto & stocks (e.g. BTC, Solana, Tata, NVDA)..."
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setIsOpen(true); }}
+          onFocus={() => setIsOpen(true)}
+          onKeyDown={handleKeyDown}
+        />
+        {query ? (
+          <X size={14} style={{ cursor: "pointer", color: "var(--text-muted)" }} onClick={(e) => { e.stopPropagation(); setQuery(""); }} />
+        ) : (
+          <span className="search-kbd-shortcut">Ctrl K</span>
+        )}
+      </div>
+
+      {isOpen && (
+        <div className="search-dropdown-menu">
+          <div className="search-dropdown-header">
+            <span style={{ fontSize: "11px", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-muted)" }}>
+              {query.trim() ? "Search Results" : "Featured & Trending Assets"}
+            </span>
+            <div style={{ display: "flex", gap: "4px" }}>
+              {[
+                { id: "all", label: "All" },
+                { id: "stock", label: "Stocks" },
+                { id: "crypto", label: "Crypto" },
+              ].map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setCategory(cat.id); }}
+                  className={`category-filter-pill ${category === cat.id ? "active" : ""}`}
+                >
+                  {cat.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {loading && (
+            <div style={{ padding: "18px", textAlign: "center", color: "var(--text-muted)", fontSize: "12px" }}>
+              Scanning live global tickers & crypto feeds...
+            </div>
+          )}
+
+          {!loading && results.length > 0 && (
+            <div style={{ maxHeight: "320px", overflowY: "auto" }}>
+              {results.map((item, idx) => (
+                <div
+                  key={`${item.symbol}-${idx}`}
+                  className={`search-result-row ${selectedIndex === idx ? "selected" : ""}`}
+                  onMouseEnter={() => setSelectedIndex(idx)}
+                  onClick={() => handleSelect(item)}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
+                    <span className={getBadgeClass(item)}>{getBadgeLabel(item)}</span>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <span className="mono" style={{ fontWeight: "700", color: "var(--text-primary)", fontSize: "13px" }}>
+                          {item.symbol}
+                        </span>
+                        <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>{item.currency || "$"}</span>
+                      </div>
+                      <div style={{ fontSize: "12px", color: "var(--text-secondary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {item.name}
+                      </div>
+                    </div>
+                  </div>
+                  <span style={{ fontSize: "11px", color: "var(--accent-blue)", fontWeight: "600", flexShrink: 0 }}>
+                    Analyze →
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!loading && results.length === 0 && (
+            <div style={{ padding: "20px 16px", textAlign: "center" }}>
+              <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "10px" }}>
+                No pre-indexed matches for "<b>{query}</b>"
+              </div>
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ fontSize: "12px", background: "var(--accent-blue)", color: "#fff", border: "none" }}
+                onClick={() => handleSelect({ symbol: query.trim().toUpperCase() })}
+              >
+                Analyze "{query.trim().toUpperCase()}" directly on Yahoo Finance →
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Header & Command Bar
 function Header({ theme, toggleTheme, onRefresh, onSelectTicker }) {
   const [status, setStatus] = useState(null);
@@ -278,6 +497,9 @@ function Header({ theme, toggleTheme, onRefresh, onSelectTicker }) {
           <div className="brand-subtitle">Dalal & Wall Street • Institutional Suite</div>
         </div>
       </div>
+
+      {/* Universal Search Bar across all Crypto & Stocks */}
+      <UniversalSearchBar onSelectTicker={onSelectTicker} />
 
       {/* Header Quick Indices */}
       {topIndices.length > 0 && (
@@ -1096,6 +1318,7 @@ function AssetTable({ rows, onSelect, showScore = false, loading = false, error 
 // Detail Modal Dialog
 function DetailModal({ ticker, onClose, onTradeStock }) {
   const { data, loading, error, refetch } = useFetch(`/analyze/${encodeURIComponent(ticker)}`);
+  const [newsFilter, setNewsFilter] = useState("All");
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -1105,34 +1328,72 @@ function DetailModal({ ticker, onClose, onTradeStock }) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
+  const curr = data?.summary?.currency || (ticker.endsWith(".NS") || ticker.endsWith(".BO") ? "₹" : "$");
+  const isCrypto = ticker.includes("-USD") || data?.summary?.asset_type === "crypto" || data?.fundamentals?.sector === "Cryptocurrency";
+  const isIndian = ticker.endsWith(".NS") || ticker.endsWith(".BO");
+
+  const fmtCurrency = (val) => {
+    if (val == null || isNaN(val)) return "-";
+    return curr + Number(val).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  };
+
+  const fmtBigNum = (num) => {
+    if (num == null || isNaN(num)) return "-";
+    if (num >= 1e12) return (num / 1e12).toFixed(2) + "T";
+    if (num >= 1e9) return (num / 1e9).toFixed(2) + "B";
+    if (num >= 1e7 && isIndian) return (num / 1e7).toFixed(2) + " Cr";
+    if (num >= 1e6) return (num / 1e6).toFixed(2) + "M";
+    if (num >= 1e3) return (num / 1e3).toFixed(2) + "K";
+    return Number(num).toLocaleString();
+  };
+
+  // 52-Week Range calculations
+  const curPrice = data?.summary?.price || 0;
+  const low52 = data?.summary?.low_52w ?? curPrice;
+  const high52 = data?.summary?.high_52w ?? curPrice;
+  const rangePercent = high52 > low52
+    ? Math.min(Math.max(((curPrice - low52) / (high52 - low52)) * 100, 2), 98)
+    : 50;
+
+  // Filter news items by sentiment
+  const filteredNews = (data?.news || []).filter((n) => {
+    if (newsFilter === "All") return true;
+    return n.sentiment?.toLowerCase() === newsFilter.toLowerCase();
+  });
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-window" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <h2 style={{ fontSize: "20px", fontWeight: "800", margin: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+              <h2 style={{ fontSize: "20px", fontWeight: "800", margin: 0, color: "var(--text-primary)" }}>
                 {data?.summary?.name || ticker}
               </h2>
               <span className="mono" style={{
                 background: "var(--bg-surface-elevated)",
-                color: "var(--text-secondary)",
+                color: "var(--text-primary)",
                 padding: "3px 8px",
                 borderRadius: "var(--radius-sm)",
                 fontSize: "12px",
-                fontWeight: "700"
+                fontWeight: "700",
+                border: "1px solid var(--border-subtle)"
               }}>
                 {ticker}
               </span>
+              <span className={`asset-badge ${isCrypto ? "crypto" : isIndian ? "stock-in" : "stock-us"}`}>
+                {isCrypto ? "CRYPTO" : isIndian ? "NSE / BSE" : "GLOBAL"}
+              </span>
             </div>
-            {data?.fundamentals?.sector && (
+            {(data?.fundamentals?.sector || isCrypto) && (
               <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>
-                Sector: <b>{data.fundamentals.sector}</b>
+                Sector: <b>{data?.fundamentals?.sector || (isCrypto ? "Cryptocurrency & Blockchain" : "Equities")}</b>
+                {data?.fundamentals?.industry && <span> · Industry: <b>{data.fundamentals.industry}</b></span>}
               </div>
             )}
           </div>
 
-          <div style={{ display: "flex", gap: "10px" }}>
+          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
             {onTradeStock && (
               <button
                 className="btn-secondary"
@@ -1168,63 +1429,87 @@ function DetailModal({ ticker, onClose, onTradeStock }) {
                 <div className="metric-card">
                   <div className="metric-label">Last Traded Price</div>
                   <div className="metric-value">
-                    {data.summary.price?.toLocaleString()}
+                    {fmtCurrency(data.summary.price)}
                   </div>
-                  <div className="metric-hint" style={{ color: data.summary.ret_1d >= 0 ? "var(--gain)" : "var(--loss)", fontWeight: "700" }}>
+                  <div className="metric-hint" style={{ color: (data.summary.ret_1d || 0) >= 0 ? "var(--gain)" : "var(--loss)", fontWeight: "700" }}>
                     1D Change: {pct(data.summary.ret_1d)}
                   </div>
                 </div>
 
                 <div className="metric-card">
-                  <div className="metric-label">Multi-Horizon Returns</div>
-                  <div style={{ display: "flex", gap: "12px", marginTop: "4px" }}>
+                  <div className="metric-label">Multi-Horizon Performance</div>
+                  <div style={{ display: "flex", gap: "10px", marginTop: "4px", flexWrap: "wrap" }}>
                     <div>
-                      <small style={{ color: "var(--text-muted)", display: "block" }}>1W</small>
-                      <b style={{ color: data.summary.ret_1w >= 0 ? "var(--gain)" : "var(--loss)" }}>{pct(data.summary.ret_1w)}</b>
+                      <small style={{ color: "var(--text-muted)", display: "block", fontSize: "10px" }}>1W</small>
+                      <b style={{ color: (data.summary.ret_1w || 0) >= 0 ? "var(--gain)" : "var(--loss)", fontSize: "12.5px" }}>{pct(data.summary.ret_1w)}</b>
                     </div>
                     <div>
-                      <small style={{ color: "var(--text-muted)", display: "block" }}>1M</small>
-                      <b style={{ color: data.summary.ret_1m >= 0 ? "var(--gain)" : "var(--loss)" }}>{pct(data.summary.ret_1m)}</b>
+                      <small style={{ color: "var(--text-muted)", display: "block", fontSize: "10px" }}>1M</small>
+                      <b style={{ color: (data.summary.ret_1m || 0) >= 0 ? "var(--gain)" : "var(--loss)", fontSize: "12.5px" }}>{pct(data.summary.ret_1m)}</b>
                     </div>
                     <div>
-                      <small style={{ color: "var(--text-muted)", display: "block" }}>1Y</small>
-                      <b style={{ color: data.summary.ret_1y >= 0 ? "var(--gain)" : "var(--loss)" }}>{pct(data.summary.ret_1y)}</b>
+                      <small style={{ color: "var(--text-muted)", display: "block", fontSize: "10px" }}>3M</small>
+                      <b style={{ color: (data.summary.ret_3m || 0) >= 0 ? "var(--gain)" : "var(--loss)", fontSize: "12.5px" }}>{pct(data.summary.ret_3m)}</b>
+                    </div>
+                    <div>
+                      <small style={{ color: "var(--text-muted)", display: "block", fontSize: "10px" }}>1Y</small>
+                      <b style={{ color: (data.summary.ret_1y || 0) >= 0 ? "var(--gain)" : "var(--loss)", fontSize: "12.5px" }}>{pct(data.summary.ret_1y)}</b>
                     </div>
                   </div>
-                  <div className="metric-hint">Historical price momentum</div>
+                  <div className="metric-hint">Compound price momentum</div>
                 </div>
 
                 <div className="metric-card">
-                  <div className="metric-label">Risk & Volatility</div>
-                  <div className="metric-value" style={{ fontSize: "19px" }}>
-                    Annual Vol: {data.summary.volatility}%
+                  <div className="metric-label">52-Week Price Range</div>
+                  <div className="range-meter">
+                    <div className="range-meter-track">
+                      <div className="range-meter-fill" style={{ width: "100%" }} />
+                      <div className="range-meter-pin" style={{ left: `${rangePercent}%` }} title={`Current Price: ${fmtCurrency(curPrice)}`} />
+                    </div>
+                    <div className="range-meter-labels">
+                      <span>Low: {fmtCurrency(low52)}</span>
+                      <span style={{ fontWeight: "700", color: "var(--text-primary)" }}>{fmtCurrency(curPrice)}</span>
+                      <span>High: {fmtCurrency(high52)}</span>
+                    </div>
                   </div>
-                  <div className="metric-hint" style={{ color: "var(--loss)" }}>
-                    Max Drawdown: {data.summary.max_drawdown}%
+                  <div className="metric-hint" style={{ marginTop: "4px" }}>
+                    Day Range: {fmtCurrency(data.summary.day_low)} – {fmtCurrency(data.summary.day_high)}
                   </div>
                 </div>
 
                 <div className="metric-card">
-                  <div className="metric-label">Valuation & Health</div>
-                  <div style={{ display: "flex", gap: "12px", marginTop: "4px", fontSize: "13px" }}>
-                    <div>P/E: <b>{data.fundamentals?.pe ?? "-"}</b></div>
-                    <div>P/B: <b>{data.fundamentals?.pb ?? "-"}</b></div>
-                    <div>ROE: <b>{data.fundamentals?.roe ? `${data.fundamentals.roe}%` : "-"}</b></div>
-                  </div>
-                  <div className="metric-hint">Debt/Equity: {data.fundamentals?.debt_to_equity ?? "-"}</div>
+                  <div className="metric-label">{isCrypto ? "Market Stats & Supply" : "Valuation & Liquidity"}</div>
+                  {isCrypto ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "2px", marginTop: "2px", fontSize: "12.5px" }}>
+                      <div>Market Cap: <b>{data.fundamentals?.market_cap ? curr + fmtBigNum(data.fundamentals.market_cap) : "-"}</b></div>
+                      <div>24h Volume: <b>{data.fundamentals?.volume_24h ? curr + fmtBigNum(data.fundamentals.volume_24h) : (data.summary.volume ? fmtBigNum(data.summary.volume) : "-")}</b></div>
+                      <div className="metric-hint">Circulating Supply: {data.fundamentals?.circulating_supply ? fmtBigNum(data.fundamentals.circulating_supply) : "-"}</div>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "2px", marginTop: "2px", fontSize: "12px" }}>
+                      <div style={{ display: "flex", gap: "10px" }}>
+                        <div>P/E: <b>{data.fundamentals?.pe ?? "-"}</b></div>
+                        <div>P/B: <b>{data.fundamentals?.pb ?? "-"}</b></div>
+                        <div>ROE: <b>{data.fundamentals?.roe ? `${data.fundamentals.roe}%` : "-"}</b></div>
+                      </div>
+                      <div className="metric-hint">
+                        M-Cap: {data.fundamentals?.market_cap ? curr + fmtBigNum(data.fundamentals.market_cap) : "-"} · D/E: {data.fundamentals?.debt_to_equity ?? "-"}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
               {/* Signals */}
               {data.summary.signals?.length > 0 && (
-                <div>
+                <div style={{ marginTop: "16px" }}>
                   <h4 style={{ fontSize: "12.5px", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: "10px", letterSpacing: "0.05em" }}>
-                    Algorithmic Technical Indicators
+                    Algorithmic Technical Indicators & Trends
                   </h4>
                   <div className="signals-container">
                     {data.summary.signals.map((sig, i) => {
-                      const isBull = sig.includes("above") || sig.includes("uptrend") || sig.includes("bullish");
-                      const isBear = sig.includes("below") || sig.includes("downtrend") || sig.includes("bearish") || sig.includes("overbought");
+                      const isBull = sig.includes("above") || sig.includes("uptrend") || sig.includes("bullish") || sig.includes("golden cross");
+                      const isBear = sig.includes("below") || sig.includes("downtrend") || sig.includes("bearish") || sig.includes("Overbought");
                       const sigType = isBull ? "bullish" : isBear ? "bearish" : "neutral";
                       return (
                         <div key={i} className={`signal-chip ${sigType}`}>
@@ -1238,9 +1523,9 @@ function DetailModal({ ticker, onClose, onTradeStock }) {
               )}
 
               {/* Interactive SVG Price Chart */}
-              <div>
+              <div style={{ marginTop: "16px" }}>
                 <h4 style={{ fontSize: "12.5px", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: "10px", letterSpacing: "0.05em" }}>
-                  Price Trend & 50-DMA / 200-DMA Overlay
+                  Historical Price Trend & Moving Averages (50-DMA / 200-DMA)
                 </h4>
                 <InteractivePriceChart history={data.history} />
               </div>
@@ -1248,6 +1533,95 @@ function DetailModal({ ticker, onClose, onTradeStock }) {
               {/* Interactive SVG RSI Chart */}
               <div style={{ marginTop: "12px" }}>
                 <InteractiveRsiChart history={data.history} />
+              </div>
+
+              {/* ============================================================== */}
+              {/* Dedicated Latest News & AI Sentiment Section                   */}
+              {/* ============================================================== */}
+              <div className="modal-news-section">
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px", flexWrap: "wrap", gap: "10px" }}>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <Newspaper size={18} color="var(--accent-blue)" />
+                      <h3 style={{ fontSize: "16px", fontWeight: "800", margin: 0, color: "var(--text-primary)" }}>
+                        Latest News & Market Intelligence
+                      </h3>
+                      <span style={{ fontSize: "11px", fontWeight: "700", background: "var(--bg-surface-elevated)", padding: "2px 8px", borderRadius: "var(--radius-sm)", color: "var(--accent-blue)" }}>
+                        {data.news?.length || 0} Articles
+                      </span>
+                    </div>
+                    <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "2px" }}>
+                      Live wire headlines for {data.summary?.name || ticker} with algorithmic sentiment
+                    </div>
+                  </div>
+
+                  {/* Sentiment Filter Tabs */}
+                  <div className="news-filter-tabs">
+                    {["All", "Bullish", "Bearish", "Neutral"].map((cat) => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setNewsFilter(cat)}
+                        className={`category-filter-pill ${newsFilter === cat ? "active" : ""}`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {filteredNews.length === 0 ? (
+                  <div style={{ padding: "28px", textAlign: "center", background: "var(--bg-surface)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-subtle)" }}>
+                    <div style={{ color: "var(--text-muted)", fontSize: "13px", marginBottom: "10px" }}>
+                      {data.news?.length > 0
+                        ? `No ${newsFilter} news articles found for this ticker.`
+                        : `No recent breaking headlines found for ${data.summary?.name || ticker}.`}
+                    </div>
+                    <a
+                      href={`https://www.google.com/search?q=${encodeURIComponent((data.summary?.name || ticker) + " stock crypto news")}&tbm=nws`}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--accent-blue)", textDecoration: "none", fontWeight: "700" }}
+                    >
+                      Search Google News Web Wire <ExternalLink size={12} />
+                    </a>
+                  </div>
+                ) : (
+                  <div className="news-card-grid">
+                    {filteredNews.map((item, idx) => {
+                      const sentClass = item.sentiment ? item.sentiment.toLowerCase() : "neutral";
+                      return (
+                        <a
+                          key={idx}
+                          href={item.link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="news-item-card"
+                        >
+                          <div>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                              <span style={{ fontSize: "11px", fontWeight: "700", color: "var(--accent-blue)" }}>
+                                {item.source}
+                              </span>
+                              <span className={`sentiment-badge-pill ${sentClass}`}>
+                                {item.sentiment === "Bullish" ? "▲" : item.sentiment === "Bearish" ? "▼" : "●"} {item.sentiment}
+                              </span>
+                            </div>
+                            <h4 style={{ fontSize: "13.5px", fontWeight: "600", lineHeight: "1.4", color: "var(--text-primary)", marginBottom: "8px" }}>
+                              {item.title}
+                            </h4>
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "12px", fontSize: "11px", color: "var(--text-muted)" }}>
+                            <span>{item.published ? item.published.slice(0, 16) : "Recent"}</span>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", color: "var(--accent-blue)", fontWeight: "600" }}>
+                              Read Full <ExternalLink size={10} />
+                            </span>
+                          </div>
+                        </a>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -1871,24 +2245,92 @@ function PaperTab({ defaultTicker }) {
 // News Feed Tab
 function NewsTab() {
   const [filter, setFilter] = useState("All");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [tickerNews, setTickerNews] = useState(null);
+  const [searching, setSearching] = useState(false);
   const { data, loading, error, refetch } = useFetch("/news");
 
-  if (loading) return <TableSkeleton cols={3} rows={8} />;
-  if (error) return <ErrorState message={error} onRetry={refetch} />;
+  const handleSearchTickerNews = (e) => {
+    e?.preventDefault();
+    const q = searchQuery.trim();
+    if (!q) {
+      setTickerNews(null);
+      return;
+    }
+    setSearching(true);
+    fetchFromApi(`/news/ticker/${encodeURIComponent(q)}`)
+      .then((res) => {
+        setTickerNews(Array.isArray(res) ? res : []);
+        setSearching(false);
+      })
+      .catch(() => {
+        setTickerNews([]);
+        setSearching(false);
+      });
+  };
 
-  const sources = ["All", ...new Set((data || []).map((n) => n.source))];
-  const filtered = (data || []).filter((n) => filter === "All" || n.source === filter);
+  const clearSearch = () => {
+    setSearchQuery("");
+    setTickerNews(null);
+  };
+
+  if (loading && !tickerNews) return <TableSkeleton cols={3} rows={8} />;
+  if (error && !tickerNews) return <ErrorState message={error} onRetry={refetch} />;
+
+  const displayList = tickerNews !== null ? tickerNews : (data || []);
+  const sources = ["All", ...new Set(displayList.map((n) => n.source || n.category || "News"))];
+  const filtered = displayList.filter((n) => filter === "All" || (n.source === filter || n.category === filter));
 
   const sentimentStyles = {
     Positive: { color: "var(--gain)", bg: "var(--gain-bg)", label: "Bullish" },
+    Bullish: { color: "var(--gain)", bg: "var(--gain-bg)", label: "Bullish" },
     Negative: { color: "var(--loss)", bg: "var(--loss-bg)", label: "Bearish" },
+    Bearish: { color: "var(--loss)", bg: "var(--loss-bg)", label: "Bearish" },
     Neutral: { color: "var(--text-muted)", bg: "var(--bg-surface-elevated)", label: "Neutral" },
   };
 
   return (
     <div className="animate-fade">
+      {/* Search wire for any stock or crypto news */}
+      <form onSubmit={handleSearchTickerNews} style={{ marginBottom: "16px", display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+        <div className="search-box" style={{ flex: "1", maxWidth: "420px" }}>
+          <Search size={15} color="var(--text-muted)" />
+          <input
+            type="text"
+            className="search-input"
+            placeholder="Search news for any stock, crypto or asset (e.g. Bitcoin, Solana, Tata, Nvidia)..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          {searchQuery && (
+            <X size={14} style={{ cursor: "pointer", color: "var(--text-muted)" }} onClick={clearSearch} />
+          )}
+        </div>
+        <button type="submit" className="btn-secondary" style={{ background: "var(--accent-blue)", color: "#fff", border: "none" }} disabled={searching}>
+          {searching ? "Searching..." : "Search Asset News"}
+        </button>
+        {tickerNews !== null && (
+          <button type="button" className="btn-secondary" onClick={clearSearch}>
+            Show Global Wire
+          </button>
+        )}
+      </form>
+
+      {tickerNews !== null && (
+        <div className="banner-alert info" style={{ marginBottom: "16px" }}>
+          <Newspaper size={18} />
+          <div style={{ flex: 1, fontSize: "13px" }}>
+            Showing live news stream for <b>{searchQuery}</b> ({tickerNews.length} articles found).
+          </div>
+          <button className="btn-secondary" style={{ fontSize: "11px", padding: "4px 8px" }} onClick={clearSearch}>
+            Clear
+          </button>
+        </div>
+      )}
+
+      {/* Sources tabs */}
       <div style={{ display: "flex", gap: "8px", overflowX: "auto", marginBottom: "18px" }}>
-        {sources.map((s) => (
+        {sources.slice(0, 8).map((s) => (
           <button
             key={s}
             onClick={() => setFilter(s)}
@@ -1900,54 +2342,60 @@ function NewsTab() {
         ))}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))", gap: "16px" }}>
-        {filtered.map((item, i) => {
-          const sent = sentimentStyles[item.sentiment] || sentimentStyles.Neutral;
-          return (
-            <a
-              key={i}
-              href={item.link}
-              target="_blank"
-              rel="noreferrer"
-              style={{
-                textDecoration: "none",
-                color: "inherit",
-                display: "block",
-              }}
-            >
-              <div className="metric-card" style={{ height: "100%", justifyContent: "space-between" }}>
-                <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", marginBottom: "8px" }}>
-                    <span style={{ fontSize: "11.5px", fontWeight: "700", color: "var(--accent-blue)" }}>
-                      {item.source}
-                    </span>
-                    <span style={{
-                      fontSize: "11px",
-                      fontWeight: "800",
-                      padding: "2px 8px",
-                      borderRadius: "var(--radius-sm)",
-                      color: sent.color,
-                      background: sent.bg
-                    }}>
-                      {sent.label}
+      {filtered.length === 0 ? (
+        <div style={{ padding: "40px", textAlign: "center", color: "var(--text-muted)" }}>
+          No news articles found matching the current criteria.
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))", gap: "16px" }}>
+          {filtered.map((item, i) => {
+            const sent = sentimentStyles[item.sentiment] || sentimentStyles.Neutral;
+            return (
+              <a
+                key={i}
+                href={item.link}
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  textDecoration: "none",
+                  color: "inherit",
+                  display: "block",
+                }}
+              >
+                <div className="metric-card" style={{ height: "100%", justifyContent: "space-between" }}>
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", marginBottom: "8px" }}>
+                      <span style={{ fontSize: "11.5px", fontWeight: "700", color: "var(--accent-blue)" }}>
+                        {item.source}
+                      </span>
+                      <span style={{
+                        fontSize: "11px",
+                        fontWeight: "800",
+                        padding: "2px 8px",
+                        borderRadius: "var(--radius-sm)",
+                        color: sent.color,
+                        background: sent.bg
+                      }}>
+                        {sent.label}
+                      </span>
+                    </div>
+                    <h4 style={{ fontSize: "14px", fontWeight: "600", lineHeight: "1.4", color: "var(--text-primary)" }}>
+                      {item.title}
+                    </h4>
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "14px", fontSize: "11.5px", color: "var(--text-muted)" }}>
+                    <span>{item.published ? item.published.slice(0, 16) : "Recent"}</span>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", color: "var(--accent-blue)", fontWeight: "600" }}>
+                      Read Full <ExternalLink size={11} />
                     </span>
                   </div>
-                  <h4 style={{ fontSize: "14px", fontWeight: "600", lineHeight: "1.4", color: "var(--text-primary)" }}>
-                    {item.title}
-                  </h4>
                 </div>
-
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "14px", fontSize: "11.5px", color: "var(--text-muted)" }}>
-                  <span>{item.published ? item.published.slice(0, 16) : "Recent"}</span>
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", color: "var(--accent-blue)", fontWeight: "600" }}>
-                    Read Full <ExternalLink size={11} />
-                  </span>
-                </div>
-              </div>
-            </a>
-          );
-        })}
-      </div>
+              </a>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,15 +1,17 @@
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from analysis import UNIVERSE, fetch_overview, get_analysis, get_fundamentals, screener
 from fii_dii import FII_INSTRUCTIONS, FII_SOURCE, fetch_fii_dii_live
-from news import fetch_news
+from news import fetch_news, fetch_ticker_news
 from options import OPTION_SOURCE, OPTION_SYMBOLS, analyse_chain, fetch_nse_chain, load_option_manual
 from paper import get_price, paper_view, place_order, reset_account
+from search import search_assets, normalize_ticker
 from status import DATA, MANUAL_DIR, load_json_list, resolve
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -58,6 +60,12 @@ def market_status():
     }
 
 
+@app.get("/api/search")
+def search(q: str = Query("", description="Search term for stocks and crypto"), category: str = "all"):
+    """Search across all crypto and stocks globally."""
+    return search_assets(query=q, category=category, limit=15)
+
+
 @app.get("/api/overview")
 def overview():
     return fetch_overview()
@@ -71,11 +79,37 @@ def get_screener(market: str = "india"):
 
 
 @app.get("/api/analyze/{ticker}")
-def analyze(ticker: str):
-    a = get_analysis(ticker, ticker)
+def analyze(ticker: str, name: Optional[str] = None):
+    resolved = normalize_ticker(ticker)
+    fund = get_fundamentals(resolved)
+    display_name = name or fund.get("name") or resolved
+
+    a = get_analysis(resolved, display_name)
     if not a:
-        raise HTTPException(404, "No data for this ticker")
-    return {**a, "fundamentals": get_fundamentals(ticker)}
+        raise HTTPException(404, f"No market data available for '{ticker}'")
+
+    # Fetch real-time news for this stock or crypto
+    news_items = fetch_ticker_news(resolved, name=display_name, limit=10)
+
+    # If name in summary is just the raw ticker, replace with friendly name
+    if a.get("summary"):
+        if fund.get("name") and fund["name"] != resolved:
+            a["summary"]["name"] = fund["name"]
+        elif display_name and display_name != resolved:
+            a["summary"]["name"] = display_name
+
+    return {
+        **a,
+        "fundamentals": fund,
+        "news": news_items,
+        "resolved_ticker": resolved,
+    }
+
+
+@app.get("/api/news/ticker/{ticker}")
+def ticker_news(ticker: str, name: Optional[str] = None):
+    resolved = normalize_ticker(ticker)
+    return fetch_ticker_news(resolved, name=name, limit=12)
 
 
 @app.get("/api/fii-dii")
